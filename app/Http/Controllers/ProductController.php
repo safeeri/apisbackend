@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 use App\Models\Product;
-
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Http\Request;
 
 class ProductController extends Controller
@@ -19,36 +21,46 @@ class ProductController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
-    {
-        // Validate incoming data
-        $request->validate([
-            'title' => 'required|string',
-            'description' => 'required|string',
-            'price' => 'required|numeric',
-            'image' => 'nullable|image|max:2048',
-        ]);
-    
-        // Handle image upload
-        $imagePath = null;
-        if ($request->hasFile('image')) {
-            $imagePath = $request->file('image')->store('products', 'public');
-        }
-    
-        // Create the product record
-        $product = Product::create([
-            'title' => $request->title,
-            'description' => $request->description,
-            'price' => $request->price,
-            'image' => $imagePath,
-        ]);
-    
+   
+
+
+public function store(Request $request)
+{
+    // Validate incoming data
+    $validator = Validator::make($request->all(), [
+        'title' => 'required|string',
+        'description' => 'required|string',
+        'price' => 'required|numeric',
+        'image' => 'required|image|max:2048',
+    ]);
+
+    // Check if validation fails
+    if ($validator->fails()) {
         return response()->json([
-            'message' => 'Product added successfully!',
-            'product' => $product
-        ], 201);
+            'success' => false,
+            'errors' => $validator->errors(),
+        ], 422);
     }
-    
+
+    // Handle image upload
+    $imagePath = null;
+    if ($request->hasFile('image')) {
+        $imagePath = $request->file('image')->store('products', 'public');
+    }
+
+    // Create the product record
+    $product = Product::create([
+        'title' => $request->title,
+        'description' => $request->description,
+        'price' => $request->price,
+        'image' => $imagePath,
+    ]);
+
+    return response()->json([
+        'message' => 'Product added successfully!',
+        'product' => $product
+    ], 201);
+}
     /**
      * Display the specified resource.
      */
@@ -62,38 +74,50 @@ class ProductController extends Controller
      * Update the specified resource in storage.
      */
     public function update(Request $request, string $id)
-{
-    // Find the product by ID
-    $product = Product::findOrFail($id);
-
-    // Validate incoming data
-    $request->validate([
-        'title' => 'sometimes|required|string',
-        'description' => 'sometimes|required|string',
-        'price' => 'sometimes|required|numeric',
-        'image' => 'nullable|image|max:2048',
-    ]);
-
-    // Handle image upload if new image is provided
-    if ($request->hasFile('image')) {
-        // Delete the old image if it exists
-        if ($product->image) {
-            Storage::disk('public')->delete($product->image);
+    {
+        $product = Product::find($id);
+    
+        if (!$product) {
+            return response()->json([
+                'message' => 'Product not found!',
+            ], 404);
         }
-
-        // Store the new image
-        $product->image = $request->file('image')->store('products', 'public');
+    
+        $request->validate([
+            'title' => 'nullable|string',
+            'description' => 'nullable|string',
+            'price' => 'nullable|numeric',
+            'image' => 'nullable|image|max:2048',
+        ]);
+    
+        // Handle image upload
+        $imagePath = $product->image; // Keep the existing image path
+        if ($request->hasFile('image')) {
+            // Delete the old image if it exists
+            if ($imagePath) {
+                Storage::disk('public')->delete($imagePath);
+            }
+            $imagePath = $request->file('image')->store('products', 'public');
+        }
+    
+        // Update the product record
+        $product->update([
+            'title' => $request->input('title', $product->title), // Use existing value if not provided
+            'description' => $request->input('description', $product->description),
+            'price' => $request->input('price', $product->price),
+            'image' => $imagePath,
+        ]);
+    
+        return response()->json([
+            'message' => 'Product updated successfully!',
+            'product' => $product
+        ], 200);
     }
 
-    // Update product details with the provided fields
-    $product->update($request->only('title', 'description', 'price'));
 
-    // Return response with the updated product details
-    return response()->json([
-        'message' => 'Product updated successfully!',
-        'product' => $product
-    ]);
-}
+    
+       
+    
 
     /**
      * Remove the specified resource from storage.
